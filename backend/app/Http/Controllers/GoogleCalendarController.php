@@ -18,7 +18,7 @@ use phpDocumentor\Reflection\PseudoTypes\True_;
 
 class GoogleCalendarController extends Controller
 {
-    public function index_trial(){
+    public function index_(){
         // phpinfo();
 		$interviewer_setting = [
 			'akihisa.makimoto@dive.design' => 2,
@@ -32,17 +32,17 @@ class GoogleCalendarController extends Controller
         $viewEnd = Carbon::parse('2021-04-25T24:00:00', '+9:00');
         
         $event = new Event;
-  
-        $events = Event::get($viewStart, $viewEnd, [], 'akihisa.makimoto@dive.design');
 
-        foreach ($interviewer_setting as $user => $frequency) {
-            GetGoogleCalendar::dispatch($viewStart, $viewEnd, $user);
-			$calendars = $events->groupBy(function ($v) {
-				return $v->googleEvent->start->dateTime;
-            });
-        }
+        // $events = Event::get($viewStart, $viewEnd, [], 'akihisa.makimoto@dive.design');
 
-        echo "end";
+        // foreach ($interviewer_setting as $user => $frequency) {
+        //     GetGoogleCalendar::dispatch($viewStart, $viewEnd, $user);
+		// 	$calendars = $events->groupBy(function ($v) {
+		// 		return $v->googleEvent->start->dateTime;
+        //     });
+        // }
+        $this->getScheduledDateTimes('a', 'b');
+        echo "<br>end";
     }
 
     public function index() {
@@ -53,14 +53,17 @@ class GoogleCalendarController extends Controller
 			'tatsuya.kato@dive.design' => 1,
 			'satoru.ayukawa@dive.design' => 1,
 			'masafumi.ishimoto@dive.design' => 1,
-		];
+        ];
+        $interview_times = [
+
+        ];
 
         $viewStart = Carbon::parse('2021-04-19', '+9:00');
         $viewEnd = Carbon::parse('2021-04-25T24:00:00', '+9:00');
         // $viewStart = '2021-04-19T10%3A00%3A00%2B09%3A00';
         // $viewEnd = '2021-04-21T10%3A00%3A00%2B09%3A00';
-        $viewStart = '2021-04-20T10:00:00+09:00';
-        $viewEnd = '2021-04-21T23:00:00+09:00';
+        $viewStart = '2021-04-26T09:00:00+09:00';
+        $viewEnd = '2021-04-26T19:00:00+09:00';
         echo $viewStart;
         echo $viewEnd;
         $client = new Google_Client();
@@ -72,17 +75,16 @@ class GoogleCalendarController extends Controller
         // echo $resp->getBody()->getContents();
 
         // $url = 'https://www.googleapis.com/calendar/v3/calendars/akihisa.makimoto@dive.design/events?timeMin=' . $viewStart . '&timeMax=' . $viewEnd;
-        $url = 'https://www.googleapis.com/calendar/v3/calendars/akihisa.makimoto@dive.design/events';
 
         foreach ($interviewer_setting as $user => $frequency) {
             $url = "https://www.googleapis.com/calendar/v3/calendars/{$user}/events";
-            echo $url;
 
             // 普通に順次実行した結果
             // $resp = $httpClient->request('GET', $url, [
-            //     'query' => ['timeMin' => $viewStart, 'timeMax' => $viewEnd]
+            //     'query' => ['timeMin' => $viewStart, 'timeMax' => $viewEnd, 'singleEvents' => 'true']
             // ]);
-            // echo $resp->getBody()->getContents();
+            // echo $url . "<br>";
+            // echo $resp->getBody()->getContents() . "<br>";
 
             // 並列処理
             // $promise = $httpClient->requestAsync('GET', $url, [
@@ -102,9 +104,10 @@ class GoogleCalendarController extends Controller
         $requests = function() use($httpClient, $interviewer_setting, $viewStart, $viewEnd) {
             foreach ($interviewer_setting as $user => $frequency) {
                 $url = "https://www.googleapis.com/calendar/v3/calendars/{$user}/events";
-                yield function() use($httpClient, $url, $viewStart, $viewEnd) {
+                // $x => function()...とすることで、fulfilledの第2引数に割り当てられる
+                yield $user => function() use($httpClient, $url, $viewStart, $viewEnd) {
                     return $httpClient->requestAsync('GET', $url, [
-                        'query' => ['timeMin' => $viewStart, 'timeMax' => $viewEnd, 'singleEvents' => 'true']
+                        'query' => ['timeMin' => $viewStart, 'timeMax' => $viewEnd, 'singleEvents' => 'true', 'orderBy' => 'startTime']
                     ]);
                 };
                 // yield new Request('GET', $url, [
@@ -113,69 +116,103 @@ class GoogleCalendarController extends Controller
             }
         };
 
-        $dateTimeList = array();
+        $dateTimes = array();
         $pool = new Pool($httpClient, $requests(), [
             'concurrency' => 5,
-            'fulfilled' => function(Response $resp, $index) use(&$dateTimeList) {
-                echo "----------<br>";
-                // echo $resp->getBody()->getContents();
-                echo "----------<br>";
-
+            'fulfilled' => function(Response $resp, $user) use(&$dateTimes) {
                 $events = collect(json_decode($resp->getBody()->getContents())->items);
-                
-                foreach ($events as $k => $v) {
-                    // echo $k . " : " . json_encode($v, JSON_UNESCAPED_UNICODE) . "<br>";
-                }
 
-                // 不要なall-dayイベントを除外する all-day eventだとstartにdateTimeキーがない（代わりにdateキーがある）
-                $filtered = $events->filter(function ($v) {
-                    return isset($v->start->dateTime);
-                });
+                // attendeeについての参考　https://buildersbox.corp-sansan.com/entry/2019/03/07/110000
+                $filtered = $events->filter(function ($v) use($user) {
+                    // 不要なall-dayイベントを除外する all-day eventだとstartにdateTimeキーがない（代わりにdateキーがある）
+                    if (!isset($v->start->dateTime)) {
+                        return false;
+                    }
 
-                $calendars = $filtered->groupBy(function ($v) {
-                    // echo json_encode($v);
-                    return $v->start->dateTime;
-                });
-
-                // echo "<br>";
-                // echo json_encode($calendars);
-
-                $dateTimeListPerInterviewer = array_keys($calendars->toArray());
-                $dateTimeListPerInterviewer = array_unique($dateTimeListPerInterviewer);
-                print_r($dateTimeListPerInterviewer);
-
-                foreach ($calendars as $dateTime => $schedules) {
-                    array_push($dateTimeListPerInterviewer, $dateTime);
+                    if (!isset($v->attendees)) { // 複数参加者がいる場合のみ存在するプロパティ
+                        return true;
+                    }
                     
-                    // echo "<br>";
-                    // echo "time : " . $dateTime . "<br>";
-                    // $dateTimeList[$dateTime] = count($schedules);
+                    // 辞退している予定は除外する
+                    foreach ($v->attendees as $attendee) {
+                        if ($attendee->email === $user) {
+                            return $attendee->responseStatus !== 'declined';
+                        }
+                    }
+                    
+                    return true;
+                });
+
+                // foreach ($filtered as $d => $e) {
+                //     echo "<br>";
+                //     echo json_encode($e, JSON_UNESCAPED_UNICODE);
+                // }
+                $dateTimesPerInterviewer = array();
+                foreach ($filtered as $schedule) {
+                    echo "<br>";
+                    echo $schedule->start->dateTime . " : " . $schedule->end->dateTime;
+                    // echo json_encode($this->getScheduledDateTimes($schedule->start->dateTime, $schedule->end->dateTime));
+                    $dateTimesPerInterviewer = array_merge($dateTimesPerInterviewer, $this->getScheduledDateTimes($schedule->start->dateTime, $schedule->end->dateTime));
                 }
+                $dateTimesPerInterviewer = array_unique($dateTimesPerInterviewer);
+                echo "<br>";
+                echo $user . " : " . json_encode($dateTimesPerInterviewer);
+                $dateTimes = array_merge($dateTimes, $dateTimesPerInterviewer);
+
+                // $calendars = $filtered->groupBy(function ($v) {
+                //     return $v->start->dateTime;
+                // });
+
+                // $dateTimeListPerInterviewer = array_keys($calendars->toArray());
+                // $dateTimeListPerInterviewer = array_unique($dateTimeListPerInterviewer);
+                // echo "<br>" . $user . "<br>";
+                // print_r($dateTimeListPerInterviewer);
+
+                // $dateTimeList = array_merge($dateTimeList, $dateTimeListPerInterviewer);
+
+                // foreach ($calendars as $dateTime => $schedules) {
+                //     array_push($dateTimeListPerInterviewer, $dateTime);
+                    
+                //     echo "<br>";
+                //     echo "time : " . $dateTime . "<br>";
+                //     $dateTimeList[$dateTime] = count($schedules);
+                // }
             }
         ]);
 
         $promise = $pool->promise();
         $promise->wait();
+        echo "<br>----------------------------<br>";
+        print_r($dateTimes);
+        echo "<br>----------------------------<br>";
 
-        foreach($dateTimeList as $t => $count) {
-            echo "<br>last<br>";
-            echo $t . ":" . $count . "<br>";
+        $schedules = array_count_values($dateTimes);
+
+        print_r($schedules);
+
+        // foreach($dateTimeList as $t => $count) {
+        //     echo "<br>last<br>";
+        //     echo $t . ":" . $count . "<br>";
+        // }
+
+    }
+
+    private function getScheduledDateTimes($start, $end) {
+        $dtStart = new Carbon($start);
+        $dtStart->minute = 0;
+
+        $dtEnd = new Carbon($end);
+        
+        $dateTimes = array();
+        $dt = $dtStart;
+
+        while ($dt < $dtEnd) {
+            if (($dt->hour >= 10) && ($dt->hour <= 19)) {
+                array_push($dateTimes, $dt->format('Y-m-d H:i:s'));
+            }
+            $dt->addHour();
         }
 
-        $url = "https://www.googleapis.com/calendar/v3/calendars/akihisa.makimoto@dive.design/events/dd99p88lc84fkqcc03cl4s0grn_R20210415T103000";
-        $res = $httpClient->request('GET', $url);
-        echo "<br><br>";
-        echo get_class($res->getBody());
-        echo $res->getBody()->getContents();
-        //------------------------------------------------------
-        
-        // $promise->then(
-        //     function($response) {
-        //         return $response;
-        //     }
-        // );
-        // $resp = $promise->wait();
-        // echo $resp->getBody()->getContents();
-
+        return $dateTimes;
     }
 }
