@@ -46,73 +46,113 @@ class GoogleCalendarController extends Controller
     }
 
     public function index() {
-		$interviewer_setting = [
-			'akihisa.makimoto@dive.design' => 2,
-			'yuta.mizusawa@dive.design' => 1,
-			'yurika.kobayashi@dive.design' => 1,
-			'tatsuya.kato@dive.design' => 1,
-			'satoru.ayukawa@dive.design' => 1,
-			'masafumi.ishimoto@dive.design' => 1,
-        ];
-        $interview_times = [
+		// $interviewer_setting = [
+		// 	'akihisa.makimoto@dive.design' => 2,
+		// 	'yuta.mizusawa@dive.design' => 1,
+		// 	'yurika.kobayashi@dive.design' => 1,
+		// 	'tatsuya.kato@dive.design' => 1,
+		// 	'satoru.ayukawa@dive.design' => 1,
+		// 	'masafumi.ishimoto@dive.design' => 1,
+        // ];
+        $interviewers = array(
+            'akihisa.makimoto@dive.design',
+            'yuta.mizusawa@dive.design',
+            'yurika.kobayashi@dive.design',
+            'tatsuya.kato@dive.design',
+            'satoru.ayukawa@dive.design',
+            'masafumi.ishimoto@dive.design'
+        );
+        $reservationViewStart = Carbon::parse('2021-04-19', '+9:00');
+        $reservationViewEnd = Carbon::parse('2021-04-25T24:00:00', '+9:00');
 
-        ];
+        $reservationViewStart = '2021-04-26T09:00:00+09:00';
+        $reservationViewEnd = '2021-04-26T19:00:00+09:00';
 
-        $viewStart = Carbon::parse('2021-04-19', '+9:00');
-        $viewEnd = Carbon::parse('2021-04-25T24:00:00', '+9:00');
-        // $viewStart = '2021-04-19T10%3A00%3A00%2B09%3A00';
-        // $viewEnd = '2021-04-21T10%3A00%3A00%2B09%3A00';
-        $viewStart = '2021-04-26T09:00:00+09:00';
-        $viewEnd = '2021-04-26T19:00:00+09:00';
-        echo $viewStart;
-        echo $viewEnd;
+        $schedules = $this->getBusyDateTime($interviewers, $reservationViewStart, $reservationViewEnd);
+        echo json_encode($schedules);
+
+        // $client = new Google_Client();
+        // $client->setAuthConfig(storage_path('app/credentials.json'));
+        // $client->addScope(Google_Service_Calendar::CALENDAR_EVENTS_READONLY);
+        // $httpClient = $client->authorize();
+
+        // $requests = function() use($httpClient, $interviewer_setting, $viewStart, $viewEnd) {
+        //     foreach ($interviewer_setting as $user => $frequency) {
+        //         $url = "https://www.googleapis.com/calendar/v3/calendars/{$user}/events";
+        //         // $x => function()...とすることで、fulfilledの第2引数に割り当てられる
+        //         yield $user => function() use($httpClient, $url, $viewStart, $viewEnd) {
+        //             return $httpClient->requestAsync('GET', $url, [
+        //                 'query' => ['timeMin' => $viewStart, 'timeMax' => $viewEnd, 'singleEvents' => 'true', 'orderBy' => 'startTime']
+        //             ]);
+        //         };
+        //     }
+        // };
+
+        // $dateTimes = array();
+        // $pool = new Pool($httpClient, $requests(), [
+        //     'concurrency' => 5,
+        //     'fulfilled' => function(Response $resp, $user) use(&$dateTimes) {
+        //         $events = collect(json_decode($resp->getBody()->getContents())->items);
+
+        //         $events = $events->filter(function ($v) use($user) {
+        //             // all-dayイベントを除外 all-day eventだとstartにdateTimeキーがない（代わりにdateキーがある）
+        //             if (!isset($v->start->dateTime)) {
+        //                 return false;
+        //             }
+
+        //             if (!isset($v->attendees)) { // 他に参加者がいる場合のみ存在するプロパティ
+        //                 return true;
+        //             }
+                    
+        //             // 辞退している予定は除外
+        //             foreach ($v->attendees as $attendee) {
+        //                 if ($attendee->email === $user) {
+        //                     return $attendee->responseStatus !== 'declined';
+        //                 }
+        //             }
+                    
+        //             return true;
+        //         });
+
+        //         $dateTimesPerInterviewer = array();
+        //         foreach ($events as $event) {
+        //             $dateTimesPerInterviewer = array_merge($dateTimesPerInterviewer, $this->getScheduledDateTimes($event->start->dateTime, $event->end->dateTime));
+        //         }
+        //         echo "<br>" . $user . "<br>";
+        //         echo json_encode($dateTimesPerInterviewer);
+        //         $dateTimesPerInterviewer = array_unique($dateTimesPerInterviewer);
+        //         $dateTimes = array_merge($dateTimes, $dateTimesPerInterviewer);
+        //     }
+        // ]);
+
+        // $promise = $pool->promise();
+        // $promise->wait();
+
+        // $schedules = array_count_values($dateTimes);
+
+    }
+
+    // public function calendarsWithJobApply(Request $request, Job $job) {
+    //     $pref = $job->prefecture_id;
+    //     $interviewers = InterviewerPrefectures::where('id', $pref)->get();
+    //     $this->getBusyDateTime($interviewers, $request->start_time, $request->end_time);
+    // }
+
+    private function getBusyDateTime($interviewers, $reservationViewStart, $reservationViewEnd) {
         $client = new Google_Client();
         $client->setAuthConfig(storage_path('app/credentials.json'));
         $client->addScope(Google_Service_Calendar::CALENDAR_EVENTS_READONLY);
         $httpClient = $client->authorize();
-        // ↓ノーマルの成功ケース
-        // $resp = $httpClient->get('https://www.googleapis.com/calendar/v3/calendars/akihisa.makimoto@dive.design/events');
-        // echo $resp->getBody()->getContents();
 
-        // $url = 'https://www.googleapis.com/calendar/v3/calendars/akihisa.makimoto@dive.design/events?timeMin=' . $viewStart . '&timeMax=' . $viewEnd;
-
-        foreach ($interviewer_setting as $user => $frequency) {
-            $url = "https://www.googleapis.com/calendar/v3/calendars/{$user}/events";
-
-            // 普通に順次実行した結果
-            // $resp = $httpClient->request('GET', $url, [
-            //     'query' => ['timeMin' => $viewStart, 'timeMax' => $viewEnd, 'singleEvents' => 'true']
-            // ]);
-            // echo $url . "<br>";
-            // echo $resp->getBody()->getContents() . "<br>";
-
-            // 並列処理
-            // $promise = $httpClient->requestAsync('GET', $url, [
-            //     'query' => ['timeMin' => $viewStart, 'timeMax' => $viewEnd]
-            // ]);
-            // $promises[] = $promise;
-        }
-
-        // 並列処理ができるが、メモリを食う
-        // $results = \GuzzleHttp\Promise\all($promises)->wait();
-        // foreach ($results as $key => $resp) {
-        //     $contents = $resp->getBody()->getContents();
-        //     echo $contents . "<br><br>";
-        // }
-
-        // メモリを節約できる方法------------------------------------
-        $requests = function() use($httpClient, $interviewer_setting, $viewStart, $viewEnd) {
-            foreach ($interviewer_setting as $user => $frequency) {
+        $requests = function() use($httpClient, $interviewers, $reservationViewStart, $reservationViewEnd) {
+            foreach ($interviewers as $user) {
                 $url = "https://www.googleapis.com/calendar/v3/calendars/{$user}/events";
-                // $x => function()...とすることで、fulfilledの第2引数に割り当てられる
-                yield $user => function() use($httpClient, $url, $viewStart, $viewEnd) {
+                // $x => function()...とすることで、$xの値がfulfilledの第2引数に割り当てられる
+                yield $user => function() use($httpClient, $url, $reservationViewStart, $reservationViewEnd) {
                     return $httpClient->requestAsync('GET', $url, [
-                        'query' => ['timeMin' => $viewStart, 'timeMax' => $viewEnd, 'singleEvents' => 'true', 'orderBy' => 'startTime']
+                        'query' => ['timeMin' => $reservationViewStart, 'timeMax' => $reservationViewEnd, 'singleEvents' => 'true', 'orderBy' => 'startTime']
                     ]);
                 };
-                // yield new Request('GET', $url, [
-                //     'query' => ['timeMin' => $viewStart, 'timeMax' => $viewEnd]
-                // ]);
             }
         };
 
@@ -122,18 +162,17 @@ class GoogleCalendarController extends Controller
             'fulfilled' => function(Response $resp, $user) use(&$dateTimes) {
                 $events = collect(json_decode($resp->getBody()->getContents())->items);
 
-                // attendeeについての参考　https://buildersbox.corp-sansan.com/entry/2019/03/07/110000
-                $filtered = $events->filter(function ($v) use($user) {
-                    // 不要なall-dayイベントを除外する all-day eventだとstartにdateTimeキーがない（代わりにdateキーがある）
+                $events = $events->filter(function ($v) use($user) {
+                    // all-dayイベントを除外 all-day eventだとstartにdateTimeキーがない（代わりにdateキーがある）
                     if (!isset($v->start->dateTime)) {
                         return false;
                     }
 
-                    if (!isset($v->attendees)) { // 複数参加者がいる場合のみ存在するプロパティ
+                    if (!isset($v->attendees)) { // 他に参加者がいる場合のみ存在するプロパティ
                         return true;
                     }
                     
-                    // 辞退している予定は除外する
+                    // 辞退している予定は除外
                     foreach ($v->attendees as $attendee) {
                         if ($attendee->email === $user) {
                             return $attendee->responseStatus !== 'declined';
@@ -143,58 +182,21 @@ class GoogleCalendarController extends Controller
                     return true;
                 });
 
-                // foreach ($filtered as $d => $e) {
-                //     echo "<br>";
-                //     echo json_encode($e, JSON_UNESCAPED_UNICODE);
-                // }
                 $dateTimesPerInterviewer = array();
-                foreach ($filtered as $schedule) {
-                    echo "<br>";
-                    echo $schedule->start->dateTime . " : " . $schedule->end->dateTime;
-                    // echo json_encode($this->getScheduledDateTimes($schedule->start->dateTime, $schedule->end->dateTime));
-                    $dateTimesPerInterviewer = array_merge($dateTimesPerInterviewer, $this->getScheduledDateTimes($schedule->start->dateTime, $schedule->end->dateTime));
+                foreach ($events as $event) {
+                    $dateTimesPerInterviewer = array_merge($dateTimesPerInterviewer, $this->getScheduledDateTimes($event->start->dateTime, $event->end->dateTime));
                 }
                 $dateTimesPerInterviewer = array_unique($dateTimesPerInterviewer);
-                echo "<br>";
-                echo $user . " : " . json_encode($dateTimesPerInterviewer);
                 $dateTimes = array_merge($dateTimes, $dateTimesPerInterviewer);
-
-                // $calendars = $filtered->groupBy(function ($v) {
-                //     return $v->start->dateTime;
-                // });
-
-                // $dateTimeListPerInterviewer = array_keys($calendars->toArray());
-                // $dateTimeListPerInterviewer = array_unique($dateTimeListPerInterviewer);
-                // echo "<br>" . $user . "<br>";
-                // print_r($dateTimeListPerInterviewer);
-
-                // $dateTimeList = array_merge($dateTimeList, $dateTimeListPerInterviewer);
-
-                // foreach ($calendars as $dateTime => $schedules) {
-                //     array_push($dateTimeListPerInterviewer, $dateTime);
-                    
-                //     echo "<br>";
-                //     echo "time : " . $dateTime . "<br>";
-                //     $dateTimeList[$dateTime] = count($schedules);
-                // }
             }
         ]);
 
         $promise = $pool->promise();
         $promise->wait();
-        echo "<br>----------------------------<br>";
-        print_r($dateTimes);
-        echo "<br>----------------------------<br>";
 
         $schedules = array_count_values($dateTimes);
 
-        print_r($schedules);
-
-        // foreach($dateTimeList as $t => $count) {
-        //     echo "<br>last<br>";
-        //     echo $t . ":" . $count . "<br>";
-        // }
-
+        return $schedules;
     }
 
     private function getScheduledDateTimes($start, $end) {
